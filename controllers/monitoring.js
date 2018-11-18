@@ -37,9 +37,7 @@ const saveDetails = async (req, res) => {
         method,
         data,
         header,
-      }, $push: {
-        responses: end - start,
-      },
+      }
     }, { upsert: true });
 
     const detail = await UrlDetail.findOne({ url, data, method });
@@ -79,10 +77,10 @@ const getDetails = async (req, res) => {
     }
     return res.status(HttpStatus.OK).json({
       responses: rsp.responses,
-      '50th_percentile': rsp.responses[49] || 0,
-      '75th_percentile': rsp.responses[75] || 0,
-      '95th_percentile': rsp.responses[95] || 0,
-      '99th_percentile': rsp.responses[99] || 0,
+      '50th_percentile': rsp.responses[rsp.responses - 49] || 0,
+      '75th_percentile': rsp.responses[rsp.responses - 75] || 0,
+      '95th_percentile': rsp.responses[rsp.responses - 95] || 0,
+      '99th_percentile': rsp.responses[rsp.responses - 99] || 0,
       method: rsp.method,
       data: rsp.data,
       headers: rsp.headers,
@@ -161,10 +159,67 @@ const deleteDetails = async (req, res) => {
   }
 };
 
+const trackResponseTime = async(req, res) => {
+  const { id } = req.params;
+  if (!id) {
+    return res.status(HttpStatus.BAD_REQUEST).json({
+      message: 'Params Missing!',
+      status: false,
+    });
+  }
+
+  try{
+    const urlDetails = await UrlDetail.findOne({_id : id});
+    if(!urlDetails) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        message: 'No saved data for request you made',
+        status: false,
+      });
+    }
+    const reqOptions = {
+      uri: urlDetails.url,
+      method: urlDetails.method,
+      body: urlDetails.data,
+      header: urlDetails.header,
+      json: true,
+    };
+    let start, end;
+    start = new Date().getTime();
+    try{
+      await request(reqOptions);
+    } catch(e){
+      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        message: 'Error while making request',
+        error: e,
+        status: false,
+      });
+    }
+    end = new Date().getTime();
+    await UrlDetail.update({_id : id}, {
+      $push: {
+        responses: end - start,
+      }
+    })
+    return res.status(HttpStatus.OK).json({
+      responses: `Pinged success`,
+      status: true,
+      _id: req.params.id
+    });
+  } catch (e) {
+    return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+      message: 'Error fetching details',
+      error: e,
+      status: false,
+    });
+  }
+
+}
+
 
 module.exports = {
   saveDetails,
   getDetails,
   updateDetails,
-  deleteDetails
+  deleteDetails,
+  trackResponseTime
 };
